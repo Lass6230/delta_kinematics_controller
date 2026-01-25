@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--
+  Delta Robot with Net FT Sensor for Admittance Control Demo
+  
+  This URDF extends the base delta_robot.urdf.xacro by adding network FT sensor support
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="delta_with_netft">
+
+  <!-- Include the base delta robot URDF -->
+  <xacro:include filename="$(find delta_kinematics_controller)/urdf/delta_robot.urdf.xacro"/>
+  
+  <!-- Include the net FT sensor macro -->
+  <xacro:include filename="$(find net_ft_description)/urdf/net_ft_sensor.ros2_control.xacro"/>
+  
+  <!-- Network FT Sensor Parameters -->
+  <xacro:arg name="ft_sensor_ip" default="192.168.1.1"/>
+  <xacro:arg name="ft_sensor_type" default="ati"/>  <!-- Options: ati, ati_axia, onrobot -->
+  <xacro:arg name="ft_rdt_sampling_rate" default="1000"/>  <!-- Hz -->
+  <xacro:arg name="ft_filter_rate" default="100"/>  <!-- Hz -->
+  <xacro:arg name="ft_use_hardware_biasing" default="true"/>
+  <xacro:arg name="use_netft" default="true"/>
+  <xacro:arg name="use_fake_hardware" default="true"/>
+
+  <!-- Add end_effector link (for admittance controller and FT sensor mounting) -->
+  <link name="end_effector">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.01"/>
+      </geometry>
+      <material name="grey"><color rgba="0.5 0.5 0.5 1.0"/></material>
+    </visual>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+               iyy="0.001" iyz="0.0"
+               izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="ee_to_end_effector" type="fixed">
+    <parent link="ee"/>
+    <child link="end_effector"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Add Network FT Sensor (only if use_netft:=true AND NOT using fake hardware) -->
+  <xacro:if value="$(arg use_netft)">
+    <xacro:unless value="$(arg use_fake_hardware)">
+      <xacro:net_ft_sensor_ros2_control 
+        name="NetFTSensor"
+        ip_address="$(arg ft_sensor_ip)"
+        sensor_type="$(arg ft_sensor_type)"
+        rdt_sampling_rate="$(arg ft_rdt_sampling_rate)"
+        internal_filter_rate="$(arg ft_filter_rate)"
+        use_hardware_biasing="$(arg ft_use_hardware_biasing)"/>
+    </xacro:unless>
+  </xacro:if>
+
+</robot>

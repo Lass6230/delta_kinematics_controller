@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<library path="delta_kinematics_controller">
+  <class name="delta_kinematics_controller/DeltaKinematicsController"
+         type="delta_kinematics_controller::DeltaKinematicsController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>Controller that converts Cartesian twist commands to joint position commands using kinematics_interface</description>
+  </class>
+</library>

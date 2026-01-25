@@ -1,0 +1,40 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/lass6230/github/a6_servo_ws/install/net_ft_driver/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/net_ft_diagnostic_broadcaster/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/delta_kinematics_controller/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/kinematics_interface_delta/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/ethercat_msgs/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/ethercat_generic_cia402_drive/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/ethercat_generic_slave/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/ethercat_driver/include/**",
+        "/home/lass6230/github/a6_servo_ws/install/ethercat_interface/include/**",
+        "/opt/ros/jazzy/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/delta_kinematics_controller/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ethercat_driver_ros2/ethercat_driver/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ethercat_driver_ros2/ethercat_generic_plugins/ethercat_generic_cia402_drive/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ethercat_driver_ros2/ethercat_generic_plugins/ethercat_generic_slave/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ethercat_driver_ros2/ethercat_interface/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ethercat_driver_ros2/ethercat_manager/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/kinematics_interface_delta/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/ros2_net_ft_driver/net_ft_driver/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/stepperonline_a6_ethercat_servo/include/**",
+        "/home/lass6230/github/a6_servo_ws/src/stepperonline_a6_ethercat_servo_delta/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

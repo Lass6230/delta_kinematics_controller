@@ -1,0 +1,195 @@
+<?xml version="1.0"?>
+<!--
+  Example URDF snippet for adding a Force-Torque Sensor to the Delta Robot
+  for use with the Admittance Controller demo.
+  
+  Add this to your delta_robot.urdf.xacro file or include it as a separate file.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 
+    This macro adds a force-torque sensor at the end effector.
+    It creates a sensor frame and adds the necessary ros2_control interfaces.
+  -->
+  <xacro:macro name="delta_fts_sensor" params="parent_link">
+    
+    <!-- Force-Torque Sensor Frame -->
+    <joint name="ft_sensor_joint" type="fixed">
+      <parent link="${parent_link}"/>
+      <child link="ft_sensor_frame"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <link name="ft_sensor_frame">
+      <!-- Optional: Add visual representation -->
+      <visual>
+        <geometry>
+          <cylinder radius="0.02" length="0.01"/>
+        </geometry>
+        <material name="ft_sensor_color">
+          <color rgba="0.8 0.8 0.2 1.0"/>
+        </material>
+      </visual>
+      <!-- Optional: Add collision geometry -->
+      <collision>
+        <geometry>
+          <cylinder radius="0.02" length="0.01"/>
+        </geometry>
+      </collision>
+      <!-- Optional: Add inertial properties -->
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="0.0001" ixy="0.0" ixz="0.0"
+                 iyy="0.0001" iyz="0.0"
+                 izz="0.0001"/>
+      </inertial>
+    </link>
+
+  </xacro:macro>
+
+  <!-- 
+    Example usage in your main URDF:
+    <xacro:delta_fts_sensor parent_link="end_effector"/>
+  -->
+
+  <!--
+    Add the force-torque sensor to your ros2_control configuration:
+    
+    OPTION 1: Add to existing ros2_control system (for fake hardware)
+  -->
+  <xacro:macro name="add_fts_to_fake_hardware">
+    <!-- Add this inside your existing <ros2_control> tag with mock hardware -->
+    <sensor name="tcp_fts_sensor">
+      <state_interface name="force.x"/>
+      <state_interface name="force.y"/>
+      <state_interface name="force.z"/>
+      <state_interface name="torque.x"/>
+      <state_interface name="torque.y"/>
+      <state_interface name="torque.z"/>
+    </sensor>
+  </xacro:macro>
+
+  <!--
+    OPTION 2: Create a separate ros2_control system for real FT sensor hardware
+    
+    This example shows how to add a real force-torque sensor using a custom plugin.
+    Replace 'your_fts_plugin' with your actual FT sensor driver plugin.
+  -->
+  <xacro:macro name="fts_ros2_control_real_hardware">
+    <ros2_control name="ForceTorqueSensor" type="sensor">
+      <hardware>
+        <!-- Example: Use a generic FT sensor plugin -->
+        <plugin>force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster</plugin>
+        <!-- OR use a specific hardware plugin for your FT sensor -->
+        <!-- <plugin>your_fts_hardware_interface/YourFtsSensorHardware</plugin> -->
+        <param name="sensor_name">tcp_fts_sensor</param>
+        <param name="frame_id">ft_sensor_frame</param>
+      </hardware>
+      
+      <sensor name="tcp_fts_sensor">
+        <state_interface name="force.x"/>
+        <state_interface name="force.y"/>
+        <state_interface name="force.z"/>
+        <state_interface name="torque.x"/>
+        <state_interface name="torque.y"/>
+        <state_interface name="torque.z"/>
+      </sensor>
+    </ros2_control>
+  </xacro:macro>
+
+  <!--
+    EXAMPLE: Complete integration with conditional hardware
+  -->
+  <xacro:macro name="delta_robot_with_fts" params="use_fake_hardware:=true">
+    
+    <!-- Add the FT sensor link and joint -->
+    <xacro:delta_fts_sensor parent_link="end_effector"/>
+    
+    <!-- Conditional ros2_control for FT sensor -->
+    <xacro:if value="${use_fake_hardware}">
+      <!-- For fake hardware: Add FT sensor to existing mock hardware system -->
+      <ros2_control name="MockDeltaSystem" type="system">
+        <hardware>
+          <plugin>mock_components/GenericSystem</plugin>
+        </hardware>
+        
+        <!-- Your existing joints -->
+        <joint name="joint1">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="velocity"/>
+        </joint>
+        <joint name="joint2">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="velocity"/>
+        </joint>
+        <joint name="joint3">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="velocity"/>
+        </joint>
+        
+        <!-- Add FT sensor -->
+        <sensor name="tcp_fts_sensor">
+          <state_interface name="force.x"/>
+          <state_interface name="force.y"/>
+          <state_interface name="force.z"/>
+          <state_interface name="torque.x"/>
+          <state_interface name="torque.y"/>
+          <state_interface name="torque.z"/>
+        </sensor>
+      </ros2_control>
+    </xacro:if>
+    
+    <xacro:unless value="${use_fake_hardware}">
+      <!-- For real hardware: Your existing hardware system -->
+      <ros2_control name="DeltaRealHardware" type="system">
+        <!-- Your real hardware plugin -->
+        <hardware>
+          <plugin>your_hardware_interface/YourHardwareInterface</plugin>
+        </hardware>
+        <!-- Your joints here -->
+      </ros2_control>
+      
+      <!-- Separate system for FT sensor with real hardware -->
+      <xacro:fts_ros2_control_real_hardware/>
+    </xacro:unless>
+    
+  </xacro:macro>
+
+  <!--
+    USAGE INSTRUCTIONS:
+    
+    1. Add the FT sensor to your delta_robot.urdf.xacro:
+       
+       <xacro:delta_fts_sensor parent_link="end_effector"/>
+    
+    2. Add the sensor to your ros2_control system:
+       
+       For fake hardware - add inside your existing <ros2_control> tag:
+       <sensor name="tcp_fts_sensor">
+         <state_interface name="force.x"/>
+         <state_interface name="force.y"/>
+         <state_interface name="force.z"/>
+         <state_interface name="torque.x"/>
+         <state_interface name="torque.y"/>
+         <state_interface name="torque.z"/>
+       </sensor>
+    
+    3. Verify the sensor is available:
+       ros2 control list_hardware_interfaces
+       
+       You should see:
+       tcp_fts_sensor/force.x [available]
+       tcp_fts_sensor/force.y [available]
+       tcp_fts_sensor/force.z [available]
+       tcp_fts_sensor/torque.x [available]
+       tcp_fts_sensor/torque.y [available]
+       tcp_fts_sensor/torque.z [available]
+    
+    4. Launch the admittance demo:
+       ros2 launch delta_kinematics_controller admittance_demo.launch.py
+  -->
+
+</robot>

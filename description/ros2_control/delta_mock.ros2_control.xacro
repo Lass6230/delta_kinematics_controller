@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="delta_mock_ros2_control">
+
+    <!-- ros2_control snippet using upstream mock_components GenericSystem -->
+    <ros2_control name="MockHardwareSystem" type="system">
+      <hardware>
+        <plugin>mock_components/GenericSystem</plugin>
+        <!-- optional plugin params can be provided here -->
+        <param name="calculate_dynamics">false</param>
+        <param name="position_state_following_offset">0.0</param>
+        <param name="mock_sensor_commands">false</param>
+      </hardware>
+
+      <joint name="joint1">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="joint2">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="joint3">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <!-- Fake Force-Torque Sensor for Admittance Control -->
+      <sensor name="tcp_fts_sensor">
+        <state_interface name="force.x"/>
+        <state_interface name="force.y"/>
+        <state_interface name="force.z"/>
+        <state_interface name="torque.x"/>
+        <state_interface name="torque.y"/>
+        <state_interface name="torque.z"/>
+        <param name="frame_id">end_effector</param>
+      </sensor>
+
+    </ros2_control>
+
+  </xacro:macro>
+
+</robot>

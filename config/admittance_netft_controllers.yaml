@@ -1,0 +1,253 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # Delta kinematics controller - publishes lower joint states
+    my_delta_controller:
+      type: delta_kinematics_controller/DeltaKinematicsController
+
+    # Force-Torque Sensor Broadcaster - broadcasts FT sensor data
+    force_torque_sensor_broadcaster:
+      type: force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster
+
+    # Net FT Diagnostic Broadcaster - monitors FT sensor health
+    net_ft_diagnostic_broadcaster:
+      type: net_ft_diagnostic_broadcaster/NetFTDiagnosticBroadcaster
+
+    # Admittance controller - provides compliant force control
+    # Chains to joint_trajectory_controller
+    admittance_controller:
+      type: admittance_controller/AdmittanceController
+
+    # Joint trajectory controller - receives commands from admittance controller
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+# Delta Kinematics Controller Configuration
+my_delta_controller:
+  ros__parameters:
+    joints: ["joint1", "joint2", "joint3"]
+    lower_joints: ["elbow_pitch_1", "elbow_yaw_1", "elbow_pitch_2", "elbow_yaw_2", "elbow_pitch_3", "elbow_yaw_3"]
+    kinematics_plugin_name: "kinematics_interface_delta/DeltaKinematicsPlugin"
+    base_link: "base"                # Base link name (default: "base")
+    ee_link: "end_effector"          # End effector link name (default: "end_effector")
+    ee_tf_rate: 50.0        # TF publish rate in Hz (0 disables)
+    # configure the underlying kinematics plugin (namespaced under the plugin)
+    kinematics_interface_delta:
+      e: 0.045
+      f: 0.11812
+      re: 0.34
+      rf: 0.17438
+      motor_z_offset: -0.025
+
+# Joint State Broadcaster Configuration
+joint_state_broadcaster:
+  ros__parameters:
+    # Only publish the 3 upper arm joints from hardware
+    # The lower arm joints are published by my_delta_controller
+    frame_id: base  # Match the URDF base link name
+    joints:
+      - joint1
+      - joint2
+      - joint3
+
+# Force-Torque Sensor Broadcaster Configuration
+force_torque_sensor_broadcaster:
+  ros__parameters:
+    sensor_name: tcp_fts_sensor
+    state_interface_names:
+      - force.x
+      - force.y
+      - force.z
+      - torque.x
+      - torque.y
+      - torque.z
+    frame_id: end_effector  # Frame where FT measurements are reported
+    topic_name: ft_data     # Topic to publish WrenchStamped messages
+
+# Net FT Diagnostic Broadcaster Configuration
+net_ft_diagnostic_broadcaster:
+  ros__parameters:
+    sensor_name: tcp_fts_sensor
+
+# Admittance Controller Configuration
+# This controller provides force-compliant behavior
+# It exports reference interfaces that feed into joint_trajectory_controller
+admittance_controller:
+  ros__parameters:
+    # Joints that this controller will control
+    joints:
+      - joint1
+      - joint2
+      - joint3
+
+    # Command joints for chained control (feeds into joint_trajectory_controller)
+    command_joints:
+      - joint1
+      - joint2
+      - joint3
+
+    # Command interfaces to use from hardware
+    command_interfaces:
+      - position
+
+    # State interfaces to read from hardware
+    state_interfaces:
+      - position
+      - velocity
+
+    # Reference interfaces exported for chaining (used by joint_trajectory_controller)
+    chainable_command_interfaces:
+      - position
+      - velocity
+
+    # Kinematics plugin configuration for delta robot
+    kinematics:
+      plugin_name: kinematics_interface_delta/DeltaKinematicsPlugin
+      plugin_package: kinematics_interface_delta
+      base: base  # Base link of delta robot
+      tip: end_effector  # End effector link
+      alpha: 0.0005  # Damping coefficient for Jacobian pseudo inverse
+      # Delta robot geometric parameters (passed to the plugin)
+      e: 0.045        # End effector radius (m)
+      f: 0.11812      # Base radius (m)
+      re: 0.34        # Upper arm length (m)
+      rf: 0.17438     # Lower arm length (m)
+      motor_z_offset: -0.025  # Motor Z offset from base (m)
+
+    # Force-torque sensor configuration
+    # Uses tcp_fts_sensor from net_ft_driver
+    ft_sensor:
+      name: tcp_fts_sensor
+      frame:
+        id: end_effector  # Frame where FT sensor is located
+        external: false  # FT sensor is within URDF kinematic chain
+      filter_coefficient: 0.05  # Exponential filter coefficient (0.05 = light filtering)
+
+    # Control frame for admittance calculation
+    control:
+      frame:
+        id: end_effector  # Frame where admittance control is applied
+        external: false
+
+    # Fixed world frame (gravity points down in -Z direction)
+    fixed_world_frame:
+      frame:
+        id: base  # World/base frame
+        external: false
+
+    # Gravity compensation parameters
+    gravity_compensation:
+      frame:
+        id: end_effector
+        external: false
+      CoG:  # Center of Gravity of end effector
+        pos:
+          - 0.0   # x offset from end_effector frame
+          - 0.0   # y offset
+          - -0.02 # z offset (slightly below end effector)
+        force: 0.98  # Weight in N (0.1 kg * 9.8 m/s^2)
+
+    # Admittance parameters (mass-spring-damper system)
+    admittance:
+      # Select which axes to use in admittance calculation
+      selected_axes:
+        - true  # x translation
+        - true  # y translation
+        - true  # z translation
+        - false # rx rotation (disabled for delta robot)
+        - false # ry rotation (disabled for delta robot)
+        - false # rz rotation (disabled for delta robot)
+
+      # Virtual mass for each axis (lower = more responsive, higher = smoother)
+      # F = M*a + D*v + S*(x - x_d)
+      mass:
+        - 5.0   # x
+        - 5.0   # y
+        - 5.0   # z
+        - 1.0   # rx (not used)
+        - 1.0   # ry (not used)
+        - 1.0   # rz (not used)
+
+      # Damping ratio for each axis
+      # zeta = D / (2 * sqrt(M * S))
+      # Critical damping = 1.0, underdamped < 1.0, overdamped > 1.0
+      damping_ratio:
+        - 1.0   # x (critically damped)
+        - 1.0   # y
+        - 1.0   # z
+        - 1.0   # rx
+        - 1.0   # ry
+        - 1.0   # rz
+
+      # Stiffness for each axis (higher = more resistance to displacement)
+      stiffness:
+        - 100.0  # x
+        - 100.0  # y
+        - 100.0  # z
+        - 10.0   # rx (not used)
+        - 10.0   # ry (not used)
+        - 10.0   # rz (not used)
+
+      # Joint damping (applied to all joints)
+      joint_damping: 5.0
+
+    # Allow dynamic parameter updates without reactivation
+    enable_parameter_update_without_reactivation: true
+
+# Joint Trajectory Controller Configuration
+# This controller receives reference commands from admittance_controller
+joint_trajectory_controller:
+  ros__parameters:
+    # Command interfaces
+    command_interfaces:
+      - position
+
+    # State interfaces
+    state_interfaces:
+      - position
+      - velocity
+
+    # Joints controlled (same as admittance controller command_joints)
+    joints:
+      - joint1
+      - joint2
+      - joint3
+
+    # Allow integration of position commands (useful when receiving velocity references)
+    allow_integration_in_goal_trajectories: true
+
+    # Gains for trajectory execution
+    gains:
+      joint1:
+        p: 100.0
+        d: 10.0
+        i: 0.0
+        i_clamp: 0.0
+      joint2:
+        p: 100.0
+        d: 10.0
+        i: 0.0
+        i_clamp: 0.0
+      joint3:
+        p: 100.0
+        d: 10.0
+        i: 0.0
+        i_clamp: 0.0
+
+    # Tolerances
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 0.0
+      joint1:
+        trajectory: 0.05
+        goal: 0.01
+      joint2:
+        trajectory: 0.05
+        goal: 0.01
+      joint3:
+        trajectory: 0.05
+        goal: 0.01
