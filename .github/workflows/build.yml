@@ -49,12 +49,11 @@ jobs:
       - name: Build workspace
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          colcon build --symlink-install --packages-up-to kinematics_interface_delta --event-handlers console_direct+
-          source install/setup.bash
-          colcon build --symlink-install --packages-select delta_kinematics_controller --event-handlers console_direct+
+          colcon build --symlink-install --packages-up-to delta_kinematics_controller --event-handlers console_direct+
 
       - name: Run tests
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          colcon test --event-handlers console_direct+
+          source install/setup.bash
+          colcon test --packages-select delta_kinematics_controller --event-handlers console_direct+
           colcon test-result --verbose
