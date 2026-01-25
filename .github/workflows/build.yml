@@ -21,6 +21,12 @@ jobs:
         with:
           path: src/delta_kinematics_controller
 
+      - name: Checkout kinematics_interface_delta
+        uses: actions/checkout@v4
+        with:
+          repository: Lass6230/kinematics_interface_delta
+          path: src/kinematics_interface_delta
+
       - name: Setup ROS 2 ${{ matrix.ros_distro }}
         uses: ros-tooling/setup-ros@v0.7
         with:
