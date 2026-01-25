@@ -1,0 +1,52 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: src/delta_kinematics_controller
+
+      - name: Setup ROS 2 ${{ matrix.ros_distro }}
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: ${{ matrix.ros_distro }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-colcon-common-extensions \
+            python3-rosdep
+          sudo rosdep init || true
+          rosdep update
+
+      - name: Install ROS dependencies
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Build workspace
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon build --symlink-install --event-handlers console_direct+
+
+      - name: Run tests
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon test --event-handlers console_direct+
+          colcon test-result --verbose
