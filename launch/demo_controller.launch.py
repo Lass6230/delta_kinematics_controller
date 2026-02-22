@@ -78,6 +78,11 @@ def generate_launch_description():
         executable="ros2_control_node",
         parameters=[robot_description, robot_controllers],
         output="both",
+        arguments=[
+            "--ros-args",
+            "--log-level", "DeltaKinematicsPlugin:=warn",
+            "--log-level", "my_delta_controller:=warn",
+        ],
     )
 
     spawner = launch_ros.actions.Node(
@@ -106,6 +111,17 @@ def generate_launch_description():
         arguments=['joint_trajectory_controller', '--controller-manager', '/controller_manager'],
     )
 
+    # RViz for visualization
+    rviz_config = os.path.join(this_launch_dir, '..', 'config', 'demo_controller.rviz')
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', rviz_config] if os.path.isfile(rviz_config) else [],
+        parameters=[robot_description],
+    )
+
     ld.add_action(DeclareLaunchArgument('controller_yaml', default_value=default_yaml,
                                         description='Path to controller YAML configuration'))
 
@@ -116,5 +132,6 @@ def generate_launch_description():
     ld.add_action(spawner)
     ld.add_action(joint_state_broadcaster_spawner)
     ld.add_action(joint_trajectory_controller_spawner)
+    ld.add_action(rviz_node)
 
     return ld

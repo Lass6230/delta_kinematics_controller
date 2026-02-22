@@ -39,6 +39,7 @@ private:
   // parameters
   std::vector<std::string> joint_names_;
   std::vector<std::string> lower_joint_names_;
+  std::vector<std::string> ee_joint_names_;   // prismatic ee_x, ee_y, ee_z
   std::string kinematics_plugin_name_ = "kinematics_interface_delta/DeltaKinematicsPlugin";
 
   // plugin loader and instance
@@ -56,7 +57,7 @@ private:
   rclcpp::Time last_ee_tf_time_ = rclcpp::Time(0);
 
   // Configurable frame names
-  std::string base_link_ = "base";
+  std::string base_link_ = "base_link";
   std::string ee_link_ = "end_effector";
 };
 

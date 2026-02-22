@@ -5,7 +5,7 @@
   <xacro:property name="use_fake_hardware" value="true" />
 
   <!-- Base link (world frame) -->
-  <link name="base">
+  <link name="base_link">
     <inertial>
       <mass value="10.0"/>
       <origin xyz="0 0 0"/>
@@ -28,7 +28,7 @@
   
   <!-- Joint 1 (0 degrees) -->
   <joint name="joint1" type="revolute">
-    <parent link="base"/>
+    <parent link="base_link"/>
     <child link="upper_arm_1"/>
     <origin xyz="${base_radius} 0 ${motor_offset}" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
@@ -54,7 +54,7 @@
 
   <!-- Joint 2 (120 degrees) -->
   <joint name="joint2" type="revolute">
-    <parent link="base"/>
+    <parent link="base_link"/>
     <child link="upper_arm_2"/>
     <origin xyz="${-base_radius*0.5} ${base_radius*0.866} ${motor_offset}" rpy="0 0 ${2*pi/3}"/>
     <axis xyz="0 1 0"/>
@@ -80,7 +80,7 @@
 
   <!-- Joint 3 (240 degrees) -->
   <joint name="joint3" type="revolute">
-    <parent link="base"/>
+    <parent link="base_link"/>
     <child link="upper_arm_3"/>
     <origin xyz="${-base_radius*0.5} ${-base_radius*0.866} ${motor_offset}" rpy="0 0 ${4*pi/3}"/>
     <axis xyz="0 1 0"/>
@@ -132,9 +132,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <link name="lower_link_1"/>
-
-  <link name="lower_link_vis_1">
+  <link name="lower_link_1">
     <visual>
       <geometry>
         <cylinder length="0.34" radius="0.008"/>
@@ -153,12 +151,6 @@
     <axis xyz="0 0 1"/>
   </joint>
 
-  <joint name="lower_link_vis_joint_1" type="fixed">
-    <parent link="lower_pitch_link_1"/>
-    <child link="lower_link_vis_1"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
   <link name="lower_arm_end_1">
     <visual>
       <geometry>
@@ -171,7 +163,7 @@
   </link>
 
   <joint name="lower_arm_end_joint_1" type="fixed">
-    <parent link="lower_link_vis_1"/>
+    <parent link="lower_link_1"/>
     <child link="lower_arm_end_1"/>
     <origin xyz="-0.34 0 0" rpy="0 0 0"/>
   </joint>
@@ -203,9 +195,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <link name="lower_link_2"/>
-
-  <link name="lower_link_vis_2">
+  <link name="lower_link_2">
     <visual>
       <geometry>
         <cylinder length="0.34" radius="0.008"/>
@@ -224,12 +214,6 @@
     <axis xyz="0 0 1"/>
   </joint>
 
-  <joint name="lower_link_vis_joint_2" type="fixed">
-    <parent link="lower_pitch_link_2"/>
-    <child link="lower_link_vis_2"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
   <link name="lower_arm_end_2">
     <visual>
       <geometry>
@@ -242,7 +226,7 @@
   </link>
 
   <joint name="lower_arm_end_joint_2" type="fixed">
-    <parent link="lower_link_vis_2"/>
+    <parent link="lower_link_2"/>
     <child link="lower_arm_end_2"/>
     <origin xyz="-0.34 0 0" rpy="0 0 0"/>
   </joint>
@@ -274,9 +258,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <link name="lower_link_3"/>
-
-  <link name="lower_link_vis_3">
+  <link name="lower_link_3">
     <visual>
       <geometry>
         <cylinder length="0.34" radius="0.008"/>
@@ -295,12 +277,6 @@
     <axis xyz="0 0 1"/>
   </joint>
 
-  <joint name="lower_link_vis_joint_3" type="fixed">
-    <parent link="lower_pitch_link_3"/>
-    <child link="lower_link_vis_3"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
   <link name="lower_arm_end_3">
     <visual>
       <geometry>
@@ -313,7 +289,7 @@
   </link>
 
   <joint name="lower_arm_end_joint_3" type="fixed">
-    <parent link="lower_link_vis_3"/>
+    <parent link="lower_link_3"/>
     <child link="lower_arm_end_3"/>
     <origin xyz="-0.34 0 0" rpy="0 0 0"/>
   </joint>
@@ -336,11 +312,11 @@
     </visual>
   </link>
 
-  <!-- Floating joint for end effector (managed by delta kinematics controller) -->
+  <!-- Floating joint: the delta kinematics controller broadcasts
+       the true base_link→end_effector transform on /tf at runtime. -->
   <joint name="ee_floating" type="floating">
-    <parent link="base"/>
+    <parent link="base_link"/>
     <child link="end_effector"/>
-    <origin xyz="0 0 -0.4" rpy="0 0 0"/>
   </joint>
 
   <!-- ros2_control configuration -->

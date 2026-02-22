@@ -11,7 +11,7 @@
   <xacro:property name="delta_motor_z_offset" value="-0.025"/>
 
   <!-- Base link -->
-  <link name="base">
+  <link name="base_link">
     <visual>
       <geometry>
         <cylinder length="0.02" radius="0.06"/>
@@ -19,6 +19,12 @@
   <origin xyz="0 0 ${delta_motor_z_offset}" rpy="0 0 0"/>
       <material name="gray"><color rgba="0.6 0.6 0.6 1.0"/></material>
     </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.02" radius="0.06"/>
+      </geometry>
+      <origin xyz="0 0 ${delta_motor_z_offset}" rpy="0 0 0"/>
+    </collision>
   </link>
 
   <!-- Three simple revolute joints and arms for visualization -->
@@ -33,10 +39,16 @@
         <origin xyz="${delta_rf/2.0} 0 0" rpy="0 ${pi/2} 0"/>
         <material name="blue"><color rgba="0.2 0.4 0.8 1.0"/></material>
       </visual>
+      <collision>
+        <geometry>
+          <cylinder length="${delta_rf}" radius="0.01"/>
+        </geometry>
+        <origin xyz="${delta_rf/2.0} 0 0" rpy="0 ${pi/2} 0"/>
+      </collision>
     </link>
 
     <joint name="joint${idx}" type="revolute">
-      <parent link="base"/>
+      <parent link="base_link"/>
       <child link="upper_link_${idx}"/>
       <!-- Rotate around local Y axis (perpendicular to radial direction)
            This allows the arm to swing up/down in the radial plane
@@ -54,6 +66,11 @@
         </geometry>
         <material name="gray"><color rgba="0.5 0.5 0.5 1.0"/></material>
       </visual>
+      <collision>
+        <geometry>
+          <sphere radius="0.015"/>
+        </geometry>
+      </collision>
     </link>
 
     <joint name="elbow_joint_${idx}" type="fixed">
@@ -75,11 +92,6 @@
 
     <!-- Lower arm (forearm, connected to end-effector via ball joint) -->
     <link name="lower_link_${idx}">
-      <!-- Physical lower link (no visual) - visual geometry moved to lower_link_vis for controller-driven TF visualization -->
-    </link>
-
-    <!-- Visual-only lower arm link (driven by controller TF) -->
-    <link name="lower_link_vis_${idx}">
       <visual>
         <geometry>
           <cylinder length="${delta_re}" radius="0.008"/>
@@ -88,6 +100,12 @@
         <origin xyz="${-delta_re/2.0} 0 0" rpy="0 ${pi/2} 0"/>
         <material name="green"><color rgba="0.2 0.8 0.4 1.0"/></material>
       </visual>
+      <collision>
+        <geometry>
+          <cylinder length="${delta_re}" radius="0.008"/>
+        </geometry>
+        <origin xyz="${-delta_re/2.0} 0 0" rpy="0 ${pi/2} 0"/>
+      </collision>
     </link>
 
     <!-- Ball joint yaw: rotation around Z axis (after pitch) -->
@@ -98,13 +116,6 @@
       <axis xyz="0 0 1"/>  <!-- Yaw around Z axis (after pitch rotation) -->
     </joint>
 
-    <!-- Visual-only lower link fixed to the pitch link; its transform will be published by the controller -->
-    <joint name="lower_link_vis_joint_${idx}" type="fixed">
-      <parent link="lower_pitch_link_${idx}"/>
-      <child link="lower_link_vis_${idx}"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </joint>
-
     <!-- End point of lower arm (where it attaches to EE platform) -->
     <link name="lower_arm_end_${idx}">
       <visual>
@@ -113,10 +124,15 @@
         </geometry>
         <material name="gray"><color rgba="0.5 0.5 0.5 1.0"/></material>
       </visual>
+      <collision>
+        <geometry>
+          <sphere radius="0.012"/>
+        </geometry>
+      </collision>
     </link>
 
     <joint name="lower_arm_end_joint_${idx}" type="fixed">
-      <parent link="lower_link_vis_${idx}"/>
+      <parent link="lower_link_${idx}"/>
       <child link="lower_arm_end_${idx}"/>
       <origin xyz="${-delta_re} 0 0" rpy="0 0 0"/>  <!-- At the end of the lower arm (in -X direction) -->
     </joint>
@@ -138,13 +154,19 @@
       </geometry>
       <material name="red"><color rgba="0.8 0.2 0.2 1.0"/></material>
     </visual>
+    <collision>
+      <geometry>
+        <sphere radius="${delta_e}"/>
+      </geometry>
+    </collision>
   </link>
 
-  <!-- Floating joint allows ee to move freely in 6-DOF
-       The controller will publish the actual base→ee transform via TF -->
-  <joint name="ee_floating" type="floating">
-    <parent link="base"/>
+  <!-- Floating joint — robot_state_publisher ignores this;
+       the delta kinematics controller broadcasts the EE TF directly. -->
+  <joint name="ee_joint" type="floating">
+    <parent link="base_link"/>
     <child link="ee"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
   <!-- Visual markers for EE platform attachment points (actual lower arm end positions) -->

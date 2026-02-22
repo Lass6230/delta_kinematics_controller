@@ -53,6 +53,23 @@ controller_interface::CallbackReturn DeltaKinematicsController::on_configure(con
     lower_joint_names_.clear();
   }
 
+  // Declare ee_joints parameter (prismatic ee_x, ee_y, ee_z)
+  if (!node->has_parameter("ee_joints")) {
+    node->declare_parameter("ee_joints", std::vector<std::string>{});
+  }
+
+  try {
+    ee_joint_names_ = node->get_parameter("ee_joints").as_string_array();
+    if (!ee_joint_names_.empty()) {
+      RCLCPP_INFO(node->get_logger(), "Loaded %zu EE joint names (prismatic)", ee_joint_names_.size());
+    } else {
+      RCLCPP_WARN(node->get_logger(), "No ee_joints configured - EE will be published via TF only");
+    }
+  } catch (const std::exception& e) {
+    RCLCPP_WARN(node->get_logger(), "Failed to load ee_joints parameter: %s", e.what());
+    ee_joint_names_.clear();
+  }
+
   // Declare kinematics_plugin_name parameter
   if (!node->has_parameter("kinematics_plugin_name")) {
     node->declare_parameter("kinematics_plugin_name", std::string(""));
@@ -61,7 +78,7 @@ controller_interface::CallbackReturn DeltaKinematicsController::on_configure(con
 
   // Declare base_link and ee_link parameters (optional, with defaults)
   if (!node->has_parameter("base_link")) {
-    node->declare_parameter("base_link", "base");
+    node->declare_parameter("base_link", "base_link");
   }
   base_link_ = node->get_parameter("base_link").as_string();
 
@@ -114,8 +131,8 @@ controller_interface::CallbackReturn DeltaKinematicsController::on_configure(con
   // publisher for end-effector pose (computed from state interfaces)
   ee_pose_pub_ = get_node()->create_publisher<geometry_msgs::msg::PoseStamped>("ee_pose", rclcpp::SystemDefaultsQoS());
 
-  // publisher for joint states
-  joint_states_pub_ = get_node()->create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::SystemDefaultsQoS());
+  // publisher for joint states (absolute topic so robot_state_publisher receives them)
+  joint_states_pub_ = get_node()->create_publisher<sensor_msgs::msg::JointState>("/joint_states", rclcpp::SystemDefaultsQoS());
 
   // Create TF broadcaster if rate > 0
   if (ee_tf_rate_ > 0.0)
@@ -240,225 +257,149 @@ controller_interface::return_type DeltaKinematicsController::update(const rclcpp
       
       std::array<std::array<double,3>, 3> elbows;
       
-      // Calculate 't' parameter: distance from center axis to arm attachment along base
-      const double tan30 = std::tan(M_PI / 6.0);
+      // Calculate 't' parameter: base radius - EE radius
       const double sin30 = 0.5;
-      double base_t = (delta_f - delta_e) * tan30 / 2.0;
+      const double cos30 = std::cos(M_PI / 6.0);
+      double base_t = delta_f - delta_e;  // e,f are radii directly
       
-      // Calculate elbow positions using FK convention
-      // Each arm swings in its radial plane (not rotating around Z!)
-      // Arm orientation: 0°, 120°, 240° around base
+      // Calculate elbow positions matching FK coordinate convention
+      // FK: arm 1 at -Y, arm 2 at 30° from +X, arm 3 at 150° from +X
       
-      // Elbow 1 (arm at 0 degrees, extends in -Y direction)
+      // Elbow 1 (extends in -Y direction)
       elbows[0][0] = 0.0;
       elbows[0][1] = -(base_t + delta_rf * std::cos(joint_angles(0)));
       elbows[0][2] = -delta_rf * std::sin(joint_angles(0)) + motor_z_offset;
       
-      // Elbow 2 (arm at 120 degrees around base)
-      elbows[1][0] = (base_t + delta_rf * std::cos(joint_angles(1))) * sin30;
-      elbows[1][1] = (base_t + delta_rf * std::cos(joint_angles(1))) * std::cos(M_PI / 6.0);
+      // Elbow 2 (radial direction at 30° from +X)
+      elbows[1][0] = (base_t + delta_rf * std::cos(joint_angles(1))) * cos30;   // x = cos30 * (...)
+      elbows[1][1] = (base_t + delta_rf * std::cos(joint_angles(1))) * sin30;   // y = sin30 * (...)
       elbows[1][2] = -delta_rf * std::sin(joint_angles(1)) + motor_z_offset;
       
-      // Elbow 3 (arm at 240 degrees around base)
-      elbows[2][0] = -(base_t + delta_rf * std::cos(joint_angles(2))) * sin30;
-      elbows[2][1] = (base_t + delta_rf * std::cos(joint_angles(2))) * std::cos(M_PI / 6.0);
+      // Elbow 3 (radial direction at 150° from +X)
+      elbows[2][0] = -(base_t + delta_rf * std::cos(joint_angles(2))) * cos30;  // x = -cos30 * (...)
+      elbows[2][1] = (base_t + delta_rf * std::cos(joint_angles(2))) * sin30;   // y = sin30 * (...)
       elbows[2][2] = -delta_rf * std::sin(joint_angles(2)) + motor_z_offset;
 
-      // Calculate ball joint angles (pitch and yaw) for each lower arm
-      // Lower arm connects elbow to end-effector PLATFORM attachment point
-      // The EE platform has 3 attachment points at radius delta_rf from center
-      // URDF defines: pitch around Y axis, then yaw around Z axis
-      // The lower_link cylinder extends along X axis (see URDF: rpy="0 ${pi/2} 0")
-      // Each elbow frame is oriented by the joint's yaw angle
+      // Calculate passive ball joint angles (pitch and yaw) for each lower arm
+      // URDF joint chain: Ry(pitch) then Rz(yaw), lower arm visual extends in -X
+      // The URDF arm yaw angles define each arm's radial direction
+      const double arm_yaw[3] = {-M_PI/2.0, M_PI/6.0, 5.0*M_PI/6.0};  // matches URDF xacro
+      
+      // EE platform attachment point offsets from EE center.
+      // e is the radius from EE center to rod-end attachment point.
+      // Arm 1 attaches at -Y, arm 2 at 120° CW, arm 3 at 240° CW (matching FK convention).
+      const double wp = delta_e;  // e is already the radius
+      // Attachment angles in FK convention: arm1=-90°, arm2=30°, arm3=150°
+      const double attach_angle[3] = {-M_PI/2.0, M_PI/6.0, 5.0*M_PI/6.0};
+      double ee_attach[3][3];
+      for (int i = 0; i < 3; ++i) {
+        ee_attach[i][0] = t.x() + wp * std::cos(attach_angle[i]);
+        ee_attach[i][1] = t.y() + wp * std::sin(attach_angle[i]);
+        ee_attach[i][2] = t.z();  // EE platform is horizontal
+      }
+      
       std::array<double, 6> lower_arm_angles;
       for (int i = 0; i < 6; ++i) lower_arm_angles[i] = 0.0;
       
-      // CRITICAL: The ball joint reference frame is the FIXED radial direction where
-      // the elbow is located when motor angle = 0. From FK calculations at motor=0:
-      // The ball joint reference frame is the radial direction of the elbow at motor=0.
-      // From observations: ARM1 at -90°, ARM2 at 60°, ARM3 at 120°
-      // These differ from URDF joint_yaws (-90°, 30°, 150°) due to geometry offset.
-      const double elbow_radial_at_zero[3] = {-M_PI/2.0, M_PI/3.0, 2.0*M_PI/3.0};  // -90°, 60°, 120°
-      
-      // In a delta robot, all three lower arms converge at the center of the EE platform
-      // The EE platform itself is a triangle, but the attachment point is at its center
-      
-  double ee_attach[3][3];
-  // debug_data: used for debugging lower arm calculations (currently disabled)
-  [[maybe_unused]] static double debug_data[3][12];  // [arm][elbow_x, elbow_y, elbow_z, attach_x, attach_y, attach_z, dx, dy, dz, pitch, yaw, unused]
-      // All three arms attach at the EE center point
-      for (int i = 0; i < 3; i++) {
-        ee_attach[i][0] = t.x();
-        ee_attach[i][1] = t.y();
-        ee_attach[i][2] = t.z();
-      }
-      
       for (int i = 0; i < 3; ++i)
       {
-        // Vector from elbow to EE in global frame
-        // The lower arm extends from the elbow (at the ball joint) to the EE
-        // In URDF, the lower arm visual extends along -X from the elbow origin
-        // So the direction vector should point from elbow to EE
-        double dx_global = ee_attach[i][0] - elbows[i][0];
-        double dy_global = ee_attach[i][1] - elbows[i][1];
-        double dz_global = ee_attach[i][2] - elbows[i][2];
-        double length = std::sqrt(dx_global*dx_global + dy_global*dy_global + dz_global*dz_global);
+        // Direction vector from elbow to EE platform attachment point (not center!)
+        double dx_g = ee_attach[i][0] - elbows[i][0];
+        double dy_g = ee_attach[i][1] - elbows[i][1];
+        double dz_g = ee_attach[i][2] - elbows[i][2];
+        double length = std::sqrt(dx_g*dx_g + dy_g*dy_g + dz_g*dz_g);
+        if (length > 1e-6) { dx_g /= length; dy_g /= length; dz_g /= length; }
         
-        // Normalize
-        if (length > 1e-6) {
-          dx_global /= length;
-          dy_global /= length;
-          dz_global /= length;
-        }
+        // Transform direction into the arm's radial frame: Rz(-arm_yaw)
+        // This aligns with the URDF joint frame before motor rotation
+        double ca = std::cos(arm_yaw[i]);
+        double sa = std::sin(arm_yaw[i]);
+        double dx_arm =  ca * dx_g + sa * dy_g;
+        double dy_arm = -sa * dx_g + ca * dy_g;
+        double dz_arm = dz_g;
         
-        // Use the fixed radial direction at motor=0 as reference frame.
-        // The yaw angle will naturally account for asymmetric motor positions.
-        // We only need to correct the pitch for motor rotation.
+        // In the arm frame, the lower arm visual extends along -X.
+        // The full elbow frame = Rz(arm_yaw) * Ry(motor_angle).
+        // After pitch+yaw joints: Ry(motor + pitch) * Rz(yaw) * [-1,0,0] = (dx_arm, dy_arm, dz_arm)
+        //
+        // Solving:
+        //   combined_pitch = atan2(dz_arm, -dx_arm)
+        //   yaw = -atan2(dy_arm, sqrt(dx_arm² + dz_arm²))
+        //   pitch_joint = combined_pitch - motor_angle
+        
         double motor_angle = joint_angles(i);
-        double reference_radial = elbow_radial_at_zero[i];
+        double cos_phi = std::sqrt(dx_arm*dx_arm + dz_arm*dz_arm);
+        double combined_pitch = std::atan2(dz_arm, -dx_arm);
+        double yaw = -std::atan2(dy_arm, cos_phi);
+        double pitch = combined_pitch - motor_angle;
         
-        // Transform vector from global frame to the reference radial frame
-        double cos_yaw = std::cos(reference_radial);
-        double sin_yaw = std::sin(reference_radial);
-        
-        // Inverse rotation: from global to radial-aligned frame
-        double dx = cos_yaw * dx_global + sin_yaw * dy_global;
-        double dy = -sin_yaw * dx_global + cos_yaw * dy_global;
-        double dz = dz_global;  // Z component unchanged by rotation around Z
-        
-        // Debug: print transformed vector for ARM2
-        if (i == 1) {
-          RCLCPP_INFO_ONCE(get_node()->get_logger(), 
-            "ARM2 debug: global=(%6.3f,%6.3f,%6.3f) local=(%6.3f,%6.3f,%6.3f) ref_radial=%.1f°",
-            dx_global, dy_global, dz_global, dx, dy, dz, 
-            reference_radial * 180.0 / M_PI);
-        }
-        
-        // URDF joint chain (INTRINSIC rotations - each in the rotated frame):
-        //   1. elbow_pitch rotates around Y-axis (pitch) → creates lower_pitch_link frame
-        //   2. elbow_yaw rotates around Z-axis IN lower_pitch_link frame (yaw)
-        //
-        // The lower arm visual extends in -X direction, so we need to match:
-        // Ry(θ) * Rz(φ) * [-1,0,0] = direction vector from elbow to EE
-        //
-        // Step 1: Rz(φ) * [-1,0,0] = [-cos(φ), -sin(φ), 0]
-        // Step 2: Ry(θ) * [-cos(φ), -sin(φ), 0] = [-cos(θ)cos(φ), -sin(φ), sin(θ)cos(φ)]
-        //
-        // We need this to equal (dx, dy, dz), so:
-        //   -cos(θ)cos(φ) = dx  =>  cos(θ)cos(φ) = -dx
-        //   -sin(φ) = dy  =>  sin(φ) = -dy
-        //   sin(θ)cos(φ) = dz
-        //
-        // From these equations:
-        //   φ = -asin(dy)  [yaw: rotate around local Z]
-        //   cos(φ) = sqrt(1 - dy²) = sqrt(dx² + dz²)  [from Pythagorean identity]
-        //   tan(θ) = dz/(-dx) = -dz/dx  =>  θ = atan2(dz, -dx)
-        
-        double cos_phi = std::sqrt(dx*dx + dz*dz);  // = sqrt(1 - dy²) for normalized vector
-        double pitch = std::atan2(dz, -dx);  // pitch: rotate around local Y
-        double yaw = -std::atan2(dy, cos_phi);  // yaw: rotate around local Z (after pitch)
-        
-        // Subtract motor angle from pitch to account for upper arm rotation
-        // (reference frame rotation already accounts for yaw)
-        pitch -= motor_angle;
-        
-        lower_arm_angles[i*2] = pitch;      // elbow_pitch_${idx}
-        lower_arm_angles[i*2 + 1] = yaw;    // elbow_yaw_${idx}
-        
-  // (verification calculation removed to avoid unused-variable warnings)
-        
-  // Store for debug output
-        debug_data[i][0] = elbows[i][0];
-        debug_data[i][1] = elbows[i][1];
-        debug_data[i][2] = elbows[i][2];
-        debug_data[i][3] = ee_attach[i][0];
-        debug_data[i][4] = ee_attach[i][1];
-        debug_data[i][5] = ee_attach[i][2];
-        debug_data[i][6] = dx;
-        debug_data[i][7] = dy;
-        debug_data[i][8] = dz;
-        debug_data[i][9] = pitch * 180.0 / M_PI;
-        debug_data[i][10] = yaw * 180.0 / M_PI;
+        lower_arm_angles[i*2] = pitch;
+        lower_arm_angles[i*2 + 1] = yaw;
       }
-      
-      // Debug output - disabled to reduce spam (uncomment if needed for debugging)
-      // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 500,
-      //   "ARM1: elbow=(%.3f,%.3f,%.3f) pitch=%.1f° yaw=%.1f° | ARM2: elbow=(%.3f,%.3f,%.3f) pitch=%.1f° yaw=%.1f° | ARM3: elbow=(%.3f,%.3f,%.3f) pitch=%.1f° yaw=%.1f°",
-      //   debug_data[0][0], debug_data[0][1], debug_data[0][2], debug_data[0][9], debug_data[0][10],
-      //   debug_data[1][0], debug_data[1][1], debug_data[1][2], debug_data[1][9], debug_data[1][10],
-      //   debug_data[2][0], debug_data[2][1], debug_data[2][2], debug_data[2][9], debug_data[2][10]);
 
       // Publish ONLY the EE transform via TF (robot_state_publisher handles arm links from joint_states)
-      // This is necessary because EE position is computed via forward kinematics, not joint-based
+      // When ee_joints are configured (prismatic chain), publish EE position as joint_states instead
+      // so robot_state_publisher computes the TF from the prismatic chain.
       if (tf_broadcaster_ && ee_tf_rate_ > 0.0)
       {
         rclcpp::Time now = get_node()->now();
         double tf_period = 1.0 / ee_tf_rate_;
         if ((now - last_ee_tf_time_).seconds() >= tf_period)
         {
-          // Publish joint states at same rate as EE (ONLY lower arms - upper arms published by joint_state_broadcaster)
-          if (joint_states_pub_ && !lower_joint_names_.empty())
+          // Publish joint states at same rate as EE
+          if (joint_states_pub_)
           {
             sensor_msgs::msg::JointState js_msg;
             js_msg.header.stamp = now;
             js_msg.header.frame_id = base_link_;
             
-            // Only publish the computed lower arm ball joints (pitch and yaw for each arm)
-            // The upper arm joints are already published by joint_state_broadcaster
-            for (const auto& name : lower_joint_names_)
+            // Publish lower arm ball joints (pitch and yaw for each arm)
+            if (!lower_joint_names_.empty())
             {
-              js_msg.name.push_back(name);
+              for (const auto& name : lower_joint_names_)
+              {
+                js_msg.name.push_back(name);
+              }
+              for (size_t i = 0; i < lower_arm_angles.size() && i < lower_joint_names_.size(); ++i)
+              {
+                js_msg.position.push_back(lower_arm_angles[i]);
+              }
             }
-            
-            // Add corresponding positions
-            for (size_t i = 0; i < lower_arm_angles.size() && i < lower_joint_names_.size(); ++i)
+
+            // Publish EE prismatic joint positions (ee_x, ee_y, ee_z)
+            if (ee_joint_names_.size() >= 3)
             {
-              js_msg.position.push_back(lower_arm_angles[i]);
+              js_msg.name.push_back(ee_joint_names_[0]);  // ee_x
+              js_msg.position.push_back(t.x());
+              js_msg.name.push_back(ee_joint_names_[1]);  // ee_y
+              js_msg.position.push_back(t.y());
+              js_msg.name.push_back(ee_joint_names_[2]);  // ee_z
+              js_msg.position.push_back(t.z());
             }
-            
+
             joint_states_pub_->publish(js_msg);
           }
 
-          // Publish EE transform
-          geometry_msgs::msg::TransformStamped tmsg;
-          tmsg.header.stamp = now;
-          tmsg.header.frame_id = base_link_;
-          tmsg.child_frame_id = ee_link_;
-          tmsg.transform.translation.x = t.x();
-          tmsg.transform.translation.y = t.y();
-          tmsg.transform.translation.z = t.z();
-          tmsg.transform.rotation.x = q.x();
-          tmsg.transform.rotation.y = q.y();
-          tmsg.transform.rotation.z = q.z();
-          tmsg.transform.rotation.w = q.w();
-          tf_broadcaster_->sendTransform(tmsg);
-
-          // Publish visual-only lower-link transforms (controller-driven) so RViz shows the correct orientation
-          // These frames are: parent = lower_pitch_link_<i+1>, child = lower_link_vis_<i+1>
-          // The pitch joint already rotated lower_pitch_link, so we only apply yaw here in its local frame
-          for (size_t i = 0; i < 3; ++i)
+          // Only broadcast TF for EE if prismatic joints are NOT configured
+          // (when prismatic joints exist, robot_state_publisher handles EE from joint_states)
+          if (ee_joint_names_.empty())
           {
-            if (i*2 + 1 >= lower_arm_angles.size()) break;
-            double yaw = lower_arm_angles[i*2 + 1];  // Only use yaw, pitch is already applied by the joint
-
-            // Only yaw rotation around Z in the lower_pitch_link frame
-            tf2::Quaternion vis_q;
-            vis_q.setRPY(0.0, 0.0, yaw);
-
-            geometry_msgs::msg::TransformStamped vis_tf;
-            vis_tf.header.stamp = now;
-            vis_tf.header.frame_id = "lower_pitch_link_" + std::to_string(i+1);
-            vis_tf.child_frame_id = "lower_link_vis_" + std::to_string(i+1);
-            vis_tf.transform.translation.x = 0.0;
-            vis_tf.transform.translation.y = 0.0;
-            vis_tf.transform.translation.z = 0.0;
-            vis_tf.transform.rotation.x = vis_q.x();
-            vis_tf.transform.rotation.y = vis_q.y();
-            vis_tf.transform.rotation.z = vis_q.z();
-            vis_tf.transform.rotation.w = vis_q.w();
-            tf_broadcaster_->sendTransform(vis_tf);
+            geometry_msgs::msg::TransformStamped tmsg;
+            tmsg.header.stamp = now;
+            tmsg.header.frame_id = base_link_;
+            tmsg.child_frame_id = ee_link_;
+            tmsg.transform.translation.x = t.x();
+            tmsg.transform.translation.y = t.y();
+            tmsg.transform.translation.z = t.z();
+            tmsg.transform.rotation.x = q.x();
+            tmsg.transform.rotation.y = q.y();
+            tmsg.transform.rotation.z = q.z();
+            tmsg.transform.rotation.w = q.w();
+            tf_broadcaster_->sendTransform(tmsg);
           }
+
           // Elbow/lower arm TF publishing disabled - robot_state_publisher handles those from joint_states
+          // (pitch and yaw joints are published to /joint_states, robot_state_publisher positions lower_link)
           /*
           // Calculate and publish elbow positions and lower arm transforms
           // Based on delta robot geometry from the kinematics plugin parameters
@@ -506,7 +447,7 @@ controller_interface::return_type DeltaKinematicsController::update(const rclcpp
             // Publish elbow TF
             geometry_msgs::msg::TransformStamped elbow_tf;
             elbow_tf.header.stamp = now;
-            elbow_tf.header.frame_id = "base";
+            elbow_tf.header.frame_id = base_link_;
             elbow_tf.child_frame_id = "elbow_" + std::to_string(i + 1);
             elbow_tf.transform.translation.x = elbow_x;
             elbow_tf.transform.translation.y = elbow_y;

@@ -32,7 +32,7 @@ my_delta_controller:
     joints: ["joint1", "joint2", "joint3"]
     lower_joints: ["elbow_pitch_1", "elbow_yaw_1", "elbow_pitch_2", "elbow_yaw_2", "elbow_pitch_3", "elbow_yaw_3"]
     kinematics_plugin_name: "kinematics_interface_delta/DeltaKinematicsPlugin"
-    base_link: "base"                # Base link name (default: "base")
+    base_link: "base_link"            # Base link name (must match URDF link name)
     ee_link: "end_effector"          # End effector link name (default: "end_effector")
     ee_tf_rate: 50.0        # TF publish rate in Hz (0 disables)
     # configure the underlying kinematics plugin (namespaced under the plugin)
