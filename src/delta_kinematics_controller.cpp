@@ -17,83 +17,63 @@ using namespace std::chrono_literals;
 namespace delta_kinematics_controller
 {
 
+std::vector<std::string> DeltaKinematicsController::get_configured_joint_names() const
+{
+  const auto node = get_node();
+  if (!node)
+  {
+    return joint_names_;
+  }
+
+  if (node->has_parameter("joints"))
+  {
+    try
+    {
+      const auto configured_joint_names = node->get_parameter("joints").as_string_array();
+      if (!configured_joint_names.empty())
+      {
+        return configured_joint_names;
+      }
+    }
+    catch (const std::exception &)
+    {
+    }
+  }
+
+  return joint_names_;
+}
+
 DeltaKinematicsController::DeltaKinematicsController() = default;
 
 controller_interface::CallbackReturn DeltaKinematicsController::on_init()
 {
-  // default no-op
-  return controller_interface::CallbackReturn::SUCCESS;
-}
-
-controller_interface::CallbackReturn DeltaKinematicsController::on_configure(const rclcpp_lifecycle::State &)
-{
-  // Declare and read parameters
   auto node = get_node();
-  
-  // Declare joints parameter
+  if (!node)
+  {
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
   if (!node->has_parameter("joints")) {
     node->declare_parameter("joints", std::vector<std::string>{});
   }
-  joint_names_ = node->get_parameter("joints").as_string_array();
-
-  // Declare lower_joints parameter (ball joint angles)
   if (!node->has_parameter("lower_joints")) {
     node->declare_parameter("lower_joints", std::vector<std::string>{});
   }
-  
-  try {
-    lower_joint_names_ = node->get_parameter("lower_joints").as_string_array();
-    if (!lower_joint_names_.empty()) {
-      RCLCPP_INFO(node->get_logger(), "Loaded %zu lower joint names", lower_joint_names_.size());
-    } else {
-      RCLCPP_WARN(node->get_logger(), "No lower joints configured - only upper arm joints will be published");
-    }
-  } catch (const std::exception& e) {
-    RCLCPP_WARN(node->get_logger(), "Failed to load lower_joints parameter: %s", e.what());
-    lower_joint_names_.clear();
-  }
-
-  // Declare ee_joints parameter (prismatic ee_x, ee_y, ee_z)
   if (!node->has_parameter("ee_joints")) {
     node->declare_parameter("ee_joints", std::vector<std::string>{});
   }
-
-  try {
-    ee_joint_names_ = node->get_parameter("ee_joints").as_string_array();
-    if (!ee_joint_names_.empty()) {
-      RCLCPP_INFO(node->get_logger(), "Loaded %zu EE joint names (prismatic)", ee_joint_names_.size());
-    } else {
-      RCLCPP_WARN(node->get_logger(), "No ee_joints configured - EE will be published via TF only");
-    }
-  } catch (const std::exception& e) {
-    RCLCPP_WARN(node->get_logger(), "Failed to load ee_joints parameter: %s", e.what());
-    ee_joint_names_.clear();
-  }
-
-  // Declare kinematics_plugin_name parameter
   if (!node->has_parameter("kinematics_plugin_name")) {
-    node->declare_parameter("kinematics_plugin_name", std::string(""));
+    node->declare_parameter("kinematics_plugin_name", std::string("kinematics_interface_delta/DeltaKinematicsPlugin"));
   }
-  kinematics_plugin_name_ = node->get_parameter("kinematics_plugin_name").as_string();
-
-  // Declare base_link and ee_link parameters (optional, with defaults)
   if (!node->has_parameter("base_link")) {
     node->declare_parameter("base_link", "base_link");
   }
-  base_link_ = node->get_parameter("base_link").as_string();
-
   if (!node->has_parameter("ee_link")) {
     node->declare_parameter("ee_link", "end_effector");
   }
-  ee_link_ = node->get_parameter("ee_link").as_string();
-
-  // Declare ee_tf_rate parameter (optional, default 50 Hz)
   if (!node->has_parameter("ee_tf_rate")) {
     node->declare_parameter("ee_tf_rate", 50.0);
   }
-  ee_tf_rate_ = node->get_parameter("ee_tf_rate").as_double();
-
-  // Declare geometry parameters for kinematics plugin (namespaced under kinematics_interface_delta)
   if (!node->has_parameter("kinematics_interface_delta.e")) {
     node->declare_parameter("kinematics_interface_delta.e", 0.045);
   }
@@ -109,6 +89,48 @@ controller_interface::CallbackReturn DeltaKinematicsController::on_configure(con
   if (!node->has_parameter("kinematics_interface_delta.motor_z_offset")) {
     node->declare_parameter("kinematics_interface_delta.motor_z_offset", -0.025);
   }
+
+  return controller_interface::CallbackReturn::SUCCESS;
+}
+
+controller_interface::CallbackReturn DeltaKinematicsController::on_configure(const rclcpp_lifecycle::State &)
+{
+  // Declare and read parameters
+  auto node = get_node();
+  
+  joint_names_ = get_configured_joint_names();
+  
+  try {
+    lower_joint_names_ = node->get_parameter("lower_joints").as_string_array();
+    if (!lower_joint_names_.empty()) {
+      RCLCPP_INFO(node->get_logger(), "Loaded %zu lower joint names", lower_joint_names_.size());
+    } else {
+      RCLCPP_WARN(node->get_logger(), "No lower joints configured - only upper arm joints will be published");
+    }
+  } catch (const std::exception& e) {
+    RCLCPP_WARN(node->get_logger(), "Failed to load lower_joints parameter: %s", e.what());
+    lower_joint_names_.clear();
+  }
+
+  try {
+    ee_joint_names_ = node->get_parameter("ee_joints").as_string_array();
+    if (!ee_joint_names_.empty()) {
+      RCLCPP_INFO(node->get_logger(), "Loaded %zu EE joint names (prismatic)", ee_joint_names_.size());
+    } else {
+      RCLCPP_WARN(node->get_logger(), "No ee_joints configured - EE will be published via TF only");
+    }
+  } catch (const std::exception& e) {
+    RCLCPP_WARN(node->get_logger(), "Failed to load ee_joints parameter: %s", e.what());
+    ee_joint_names_.clear();
+  }
+
+  kinematics_plugin_name_ = node->get_parameter("kinematics_plugin_name").as_string();
+
+  base_link_ = node->get_parameter("base_link").as_string();
+
+  ee_link_ = node->get_parameter("ee_link").as_string();
+
+  ee_tf_rate_ = node->get_parameter("ee_tf_rate").as_double();
 
   if (joint_names_.size() < 3)
   {
@@ -191,8 +213,9 @@ controller_interface::InterfaceConfiguration DeltaKinematicsController::state_in
 {
   controller_interface::InterfaceConfiguration conf;
   conf.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-  conf.names.reserve(joint_names_.size());
-  for (const auto &j : joint_names_)
+  const auto configured_joint_names = get_configured_joint_names();
+  conf.names.reserve(configured_joint_names.size());
+  for (const auto &j : configured_joint_names)
     conf.names.push_back(j + "/position");
   return conf;
 }
@@ -201,6 +224,15 @@ controller_interface::return_type DeltaKinematicsController::update(const rclcpp
 {
   (void)time;
   (void)period;
+
+  if (state_interfaces_.size() < 3)
+  {
+    RCLCPP_ERROR_THROTTLE(
+      get_node()->get_logger(), *get_node()->get_clock(), 2000,
+      "Expected at least 3 state interfaces, but received %zu. Skipping update.",
+      state_interfaces_.size());
+    return controller_interface::return_type::ERROR;
+  }
   
   // read current joint positions
   Eigen::VectorXd joint_angles(3);

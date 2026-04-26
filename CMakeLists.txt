@@ -10,7 +10,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   geometry_msgs
   hardware_interface
   kinematics_interface
-  kinematics_interface_delta
   pluginlib
   rclcpp
   rclcpp_lifecycle

@@ -36,6 +36,8 @@ public:
   controller_interface::return_type update(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 
 private:
+  std::vector<std::string> get_configured_joint_names() const;
+
   // parameters
   std::vector<std::string> joint_names_;
   std::vector<std::string> lower_joint_names_;
